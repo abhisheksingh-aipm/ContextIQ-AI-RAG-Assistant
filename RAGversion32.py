@@ -6,30 +6,17 @@ import hashlib
 from google import genai
 from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
+from dotenv import load_dotenv
+import os
 
-# ==========================
-# ChromaDB
-# ==========================
+load_dotenv()
 
 db = chromadb.PersistentClient(path="chroma_db")
-
-collection = db.get_or_create_collection(
-    name="documents"
-)
-
-# ==========================
-# Gemini Client
-# ==========================
-
-import os
+collection = db.get_or_create_collection(name="documents")
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
-
-# ==========================
-# Cross Encoder
-# ==========================
 
 reranker = CrossEncoder(
     "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -39,13 +26,12 @@ embedding_model = SentenceTransformer(
     "all-MiniLM-L6-v2"
 )
 
-print("RAG Engine Loaded Successfully - DOCUMENT FILTER VERSION")
+print("RAG Engine Loaded Successfully")
 
 
-# ==========================
-# Function 1
-# Read PDF
-# ==========================
+# =====================================
+# 1. Process PDF
+# =====================================
 
 def process_pdf(uploaded_file):
 
@@ -58,16 +44,14 @@ def process_pdf(uploaded_file):
         text = page.extract_text()
 
         if text:
-
             full_text += text
 
     return full_text
 
 
-# ==========================
-# Function 2
-# Generate Document Hash
-# ==========================
+# =====================================
+# 2. Generate Document Hash
+# =====================================
 
 def generate_document_hash(uploaded_file):
 
@@ -77,38 +61,43 @@ def generate_document_hash(uploaded_file):
 
     uploaded_file.seek(0)
 
-    document_hash = hashlib.sha256(file_bytes).hexdigest()
+    document_hash = hashlib.sha256(
+        file_bytes
+    ).hexdigest()
 
     return document_hash
 
 
-# ==========================
-# Function 3
-# Check Existing Document
-# ==========================
+# =====================================
+# 3. Check Document Exists
+# =====================================
 
 def document_exists(document_hash):
 
     results = collection.get()
 
-    metadatas = results.get("metadatas", [])
+    metadatas = results.get(
+        "metadatas",
+        []
+    )
 
     for metadata in metadatas:
 
         if metadata is None:
             continue
 
-        if metadata.get("document_hash") == document_hash:
+        if metadata.get(
+            "document_hash"
+        ) == document_hash:
 
             return True
 
     return False
 
 
-# ==========================
-# Function 4
-# Chunk Text
-# ==========================
+# =====================================
+# 4. Chunk Text
+# =====================================
 
 def chunk_text(full_text):
 
@@ -126,17 +115,18 @@ def chunk_text(full_text):
 
         chunk = full_text[start:end]
 
-        chunks.append(chunk)
+        if chunk.strip():
+
+            chunks.append(chunk)
 
         start = end - overlap
 
     return chunks
 
 
-# ==========================
-# Function 5
-# Create Embeddings
-# ==========================
+# =====================================
+# 5. Create Embeddings
+# =====================================
 
 def create_embeddings(chunks):
 
@@ -148,15 +138,16 @@ def create_embeddings(chunks):
         show_progress_bar=True
     )
 
-    print("Embeddings created successfully!")
+    print(
+        "Embeddings created successfully!"
+    )
 
     return embeddings
 
 
-# ==========================
-# Function 6
-# Store Embeddings
-# ==========================
+# =====================================
+# 6. Store Embeddings
+# =====================================
 
 def store_embeddings(
     document_hash,
@@ -164,6 +155,14 @@ def store_embeddings(
     chunks,
     embeddings
 ):
+
+    if not chunks:
+
+        print(
+            "No text found in document."
+        )
+
+        return
 
     ids = []
 
@@ -184,182 +183,224 @@ def store_embeddings(
         )
 
     collection.add(
-
         ids=ids,
-
         documents=chunks,
-
         embeddings=embeddings.tolist(),
-
         metadatas=metadatas
-
     )
 
-    print("Embeddings stored successfully!")
+    print(
+        "Embeddings stored successfully!"
+    )
 
 
-# ==========================
-# Function 7
-# Search Selected Documents
-# ==========================
+# =====================================
+# 7. Search Selected Documents
+# =====================================
 
-def search_documents(question, selected_documents=None, n_results=5):
+def search_documents(
+    question,
+    selected_documents=None,
+    n_results=5
+):
 
     question_embedding = embedding_model.encode(
         question,
         convert_to_numpy=True
     )
 
-    results = collection.query(
-        query_embeddings=[
-            question_embedding.tolist()
-        ],
-        n_results=50,
-        include=[
-            "documents",
-            "metadatas",
-            "distances"
-        ]
-    )
+    # ---------------------------------
+    # If specific documents are selected,
+    # search ONLY inside those documents.
+    # ---------------------------------
 
-    filtered_documents = []
-    filtered_metadatas = []
-    filtered_distances = []
+    if selected_documents:
 
-    for document, metadata, distance in zip(
-        results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0]
-    ):
+        results = collection.query(
+            query_embeddings=[
+                question_embedding.tolist()
+            ],
+            n_results=n_results,
+            where={
+                "document_name": {
+                    "$in": selected_documents
+                }
+            },
+            include=[
+                "documents",
+                "metadatas",
+                "distances"
+            ]
+        )
 
-        if (
-            selected_documents
-            and metadata["document_name"] in selected_documents
-        ):
+    else:
 
-            filtered_documents.append(document)
-            filtered_metadatas.append(metadata)
-            filtered_distances.append(distance)
+        results = {
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]]
+        }
 
-    return {
-        "documents": [
-            filtered_documents[:n_results]
-        ],
-        "metadatas": [
-            filtered_metadatas[:n_results]
-        ],
-        "distances": [
-            filtered_distances[:n_results]
-        ]
-    }
-    
-# ==========================
-# Function 8
-# Rerank Search Results
-# ==========================
+    return results
 
-def rerank_results(question, results):
+
+# =====================================
+# 8. Rerank Results
+# =====================================
+
+def rerank_results(
+    question,
+    results
+):
 
     documents = results["documents"][0]
 
     metadatas = results["metadatas"][0]
+
+    if not documents:
+
+        return []
 
     pairs = []
 
     for document in documents:
 
         pairs.append(
-            (question, document)
+            (
+                question,
+                document
+            )
         )
 
-    scores = reranker.predict(pairs)
+    scores = reranker.predict(
+        pairs
+    )
 
     ranked_results = []
 
     for score, document, metadata in zip(
-
         scores,
         documents,
         metadatas
-
     ):
 
         ranked_results.append(
-
             (
                 score,
                 document,
                 metadata
             )
-
         )
 
     ranked_results.sort(
-
         key=lambda x: x[0],
-
         reverse=True
-
     )
 
     return ranked_results
 
-# ==========================
-# Function 9
-# Generate Answer
-# ==========================
 
-def generate_answer(question, ranked_results):
+# =====================================
+# 9. Generate Answer
+# =====================================
+
+def generate_answer(
+    question,
+    ranked_results
+):
+
+    if not ranked_results:
+
+        return (
+            "I couldn't find relevant information "
+            "in the selected documents."
+        )
 
     top_chunks = []
 
-    for score, document, metadata in ranked_results[:3]:
+    for score, document, metadata in ranked_results[:5]:
 
-        top_chunks.append(document)
+        document_name = metadata[
+            "document_name"
+        ]
 
-    context = "\n\n".join(top_chunks)
+        top_chunks.append(
+            f"""
+DOCUMENT: {document_name}
+
+CONTENT:
+{document}
+"""
+        )
+
+    context = "\n\n".join(
+        top_chunks
+    )
 
     prompt = f"""
-You are an AI Assistant.
+You are ContextIQ, an AI document assistant.
 
-Answer ONLY from the context below.
+Your job is to answer ONLY using the documents
+provided in the context below.
 
-If the answer is not present, say:
+IMPORTANT RULES:
 
-"I couldn't find the answer in the uploaded document."
+1. Use only information from the provided documents.
 
-Context:
+2. Do not use your general knowledge to answer.
+
+3. Do not invent information.
+
+4. If the answer is not present in the selected
+documents, say:
+
+"I couldn't find the requested information in the selected documents."
+
+5. If the user asks for a comparison, compare only
+the documents provided in the context.
+
+6. Clearly identify the document names when useful.
+
+7. Never use information from an unrelated document.
+
+8. If there is insufficient information, say so
+instead of guessing.
+
+SELECTED DOCUMENT CONTEXT:
 
 {context}
 
-Question:
+USER QUESTION:
 
 {question}
 
-Answer:
+ANSWER:
 """
 
     response = client.models.generate_content(
-
         model="gemini-3-flash-preview",
-
         contents=prompt
-
     )
 
     return response.text
 
-# ==========================
-# Function 10
-# Ask Question
-# ==========================
+
+# =====================================
+# 10. Ask Question
+# =====================================
 
 conversation_history = []
 
 
-def ask_question(question):
+def ask_question(
+    question,
+    selected_documents=None
+):
 
-    results = search_documents(question)
+    results = search_documents(
+        question,
+        selected_documents=selected_documents
+    )
 
     ranked_results = rerank_results(
         question,
@@ -378,18 +419,24 @@ def ask_question(question):
         }
     )
 
-    return answer, ranked_results[:3]
+    return (
+        answer,
+        ranked_results[:3]
+    )
 
-# ==========================
-# Function 12
-# Get Uploaded Documents
-# ==========================
+
+# =====================================
+# 11. Get Uploaded Documents
+# =====================================
 
 def get_uploaded_documents():
 
     results = collection.get()
 
-    metadatas = results.get("metadatas", [])
+    metadatas = results.get(
+        "metadatas",
+        []
+    )
 
     documents = {}
 
@@ -398,15 +445,21 @@ def get_uploaded_documents():
         if metadata is None:
             continue
 
-        doc_hash = metadata["document_hash"]
+        doc_hash = metadata[
+            "document_hash"
+        ]
 
         if doc_hash not in documents:
 
             documents[doc_hash] = {
-                "name": metadata["document_name"],
+                "name": metadata[
+                    "document_name"
+                ],
                 "chunks": 0
             }
 
-        documents[doc_hash]["chunks"] += 1
+        documents[doc_hash][
+            "chunks"
+        ] += 1
 
     return documents
