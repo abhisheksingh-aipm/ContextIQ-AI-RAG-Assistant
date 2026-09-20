@@ -22,14 +22,18 @@ st.set_page_config(
 )
 
 # =====================================
-# Session State
+# Session State Initialization
 # =====================================
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Tracks documents selected for searching
-if "selected_documents" not in st.session_state:
-    st.session_state.selected_documents = []
+# Key attached directly to multiselect widget
+if "selected_doc_names" not in st.session_state:
+    st.session_state.selected_doc_names = []
+
+# Tracks previously uploaded file names to detect NEW uploads
+if "previous_upload_names" not in st.session_state:
+    st.session_state.previous_upload_names = []
 
 
 # =====================================
@@ -51,15 +55,20 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-new_upload_processed = False
 
 # =====================================
-# Process New Uploads
+# Process Uploads & Update Multiselect
 # =====================================
 if uploaded_files:
-    # Set search context ONLY to the newly uploaded files
-    st.session_state.selected_documents = [f.name for f in uploaded_files]
+    current_upload_names = [f.name for f in uploaded_files]
 
+    # Detect if NEW files were uploaded in this cycle
+    newly_added_files = [
+        name for name in current_upload_names 
+        if name not in st.session_state.previous_upload_names
+    ]
+
+    # Process each uploaded file into ChromaDB
     for uploaded_file in uploaded_files:
         st.divider()
         st.subheader("Uploaded Document")
@@ -75,10 +84,7 @@ if uploaded_files:
             chunks = chunk_text(full_text)
 
             if not chunks:
-                st.error(
-                    "No readable text was found in this PDF. "
-                    "This may be a scanned/image-only PDF."
-                )
+                st.error("No readable text found in this PDF.")
                 continue
 
             embeddings = create_embeddings(chunks)
@@ -88,23 +94,21 @@ if uploaded_files:
                 chunks,
                 embeddings
             )
-
             st.success("Document indexed successfully.")
-            new_upload_processed = True
 
-    # Force UI to rerun so multiselect selects ONLY the newly uploaded file(s)
-    if new_upload_processed:
+    # IF NEW FILES WERE ADDED: Automatically select ONLY the newly uploaded files
+    if newly_added_files:
+        st.session_state.selected_doc_names = current_upload_names
+        st.session_state.previous_upload_names = current_upload_names
         st.rerun()
 
 
 # =====================================
-# Sidebar: History & Selection
+# Sidebar: History & Manual Selection
 # =====================================
 st.sidebar.title("AI Knowledge Base")
 
-# Retrieve indexed documents history
 documents = get_uploaded_documents()
-
 st.sidebar.metric("Total Indexed Documents", len(documents))
 
 for doc in documents.values():
@@ -113,24 +117,20 @@ for doc in documents.values():
 
 st.sidebar.divider()
 
-# List of all document names in history
 all_document_names = [doc["name"] for doc in documents.values()]
 
-# Ensure session state only contains valid names
-valid_selections = [
-    doc_name for doc_name in st.session_state.selected_documents 
-    if doc_name in all_document_names
+# Clean state to ensure only existing documents are in the widget state
+st.session_state.selected_doc_names = [
+    name for name in st.session_state.selected_doc_names 
+    if name in all_document_names
 ]
 
-# Sidebar multiselect for picking from history
+# Multiselect widget bound directly to st.session_state.selected_doc_names via key
 selected_documents = st.sidebar.multiselect(
     "Select documents to use from history",
     options=all_document_names,
-    default=valid_selections
+    key="selected_doc_names"
 )
-
-# Update state based on manual user selections in sidebar
-st.session_state.selected_documents = selected_documents
 
 
 # =====================================
@@ -143,9 +143,7 @@ question = st.text_input("Enter your question")
 
 if question:
     if not selected_documents:
-        st.warning(
-            "Please select or upload at least one document before asking a question."
-        )
+        st.warning("Please select or upload at least one document before asking a question.")
     else:
         with st.spinner("🤖 Gemini is thinking..."):
             answer, sources = ask_question(
@@ -171,7 +169,7 @@ if question:
             placeholder.markdown(stream_text)
             time.sleep(0.02)
 
-        # Display Sources Used
+        # Display Sources
         st.divider()
         st.subheader("📚 Sources Used")
 
@@ -184,7 +182,7 @@ if question:
         else:
             st.info("No relevant sources were found in the selected documents.")
 
-        # Display Chat History
+        # Display History
         st.divider()
         st.subheader("💬 Chat History")
 
