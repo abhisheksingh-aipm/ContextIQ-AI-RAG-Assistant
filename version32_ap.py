@@ -12,24 +12,34 @@ from RAGversion32 import (
     get_uploaded_documents
 )
 
+
+# =====================================
+# Page Configuration
+# =====================================
+
 st.set_page_config(
     page_title="AI Document Assistant",
     page_icon="🤖",
     layout="wide"
 )
 
+
 # =====================================
 # Session State
 # =====================================
 
 if "chat_history" not in st.session_state:
+
     st.session_state.chat_history = []
+
 
 # =====================================
 # Title
 # =====================================
 
-st.title("AI Knowledge Assistant")
+st.title(
+    "AI Knowledge Assistant"
+)
 
 st.markdown(
     "Search, understand, and chat with your documents using AI-powered semantic search."
@@ -39,54 +49,14 @@ st.caption(
     "Upload documents and ask questions using AI-powered semantic search."
 )
 
+
 # =====================================
-# Sidebar
+# Upload Documents
 # =====================================
 
-st.sidebar.title("AI Knowledge Base")
-
-documents = get_uploaded_documents()
-
-st.sidebar.metric(
-    "Documents",
-    len(documents)
+st.subheader(
+    "📄 Upload Documents"
 )
-
-for doc in documents.values():
-
-    st.sidebar.write(
-        f"📄 {doc['name']}"
-    )
-
-    st.sidebar.caption(
-        f"{doc['chunks']} Chunks"
-    )
-
-
-# =====================================
-# Select Documents
-# =====================================
-
-if documents:
-
-    selected_documents = st.sidebar.multiselect(
-        "Select documents to use",
-        options=[
-            doc["name"]
-            for doc in get_uploaded_documents().values()
-        ]
-    )
-
-else:
-
-    selected_documents = []
-
-
-# =====================================
-# Upload PDFs
-# =====================================
-
-st.subheader("📄 Upload Documents")
 
 uploaded_files = st.file_uploader(
     "Drag & drop PDF files here or click to browse",
@@ -95,13 +65,19 @@ uploaded_files = st.file_uploader(
 )
 
 
+# =====================================
+# Process New Uploads
+# =====================================
+
 if uploaded_files:
 
     for uploaded_file in uploaded_files:
 
         st.divider()
 
-        st.subheader("Uploaded Document")
+        st.subheader(
+            "Uploaded Document"
+        )
 
         st.write(
             f"**{uploaded_file.name}**"
@@ -111,7 +87,9 @@ if uploaded_files:
             uploaded_file
         )
 
-        if document_exists(document_hash):
+        if document_exists(
+            document_hash
+        ):
 
             st.info(
                 "Document already indexed and ready for search."
@@ -131,6 +109,15 @@ if uploaded_files:
                 full_text
             )
 
+            if not chunks:
+
+                st.error(
+                    "No readable text was found in this PDF. "
+                    "This may be a scanned/image-only PDF."
+                )
+
+                continue
+
             embeddings = create_embeddings(
                 chunks
             )
@@ -143,76 +130,149 @@ if uploaded_files:
             )
 
             st.success(
-                "Document indexed Successfully"
+                "Document indexed successfully."
             )
 
-    st.divider()
 
-    # =====================================
-    # Ask Question
-    # =====================================
+# =====================================
+# Sidebar
+# =====================================
 
-    question = st.text_input(
-        "Ask a Question"
+st.sidebar.title(
+    "AI Knowledge Base"
+)
+
+
+# IMPORTANT:
+# Get the latest documents AFTER
+# upload processing.
+
+documents = get_uploaded_documents()
+
+
+st.sidebar.metric(
+    "Documents",
+    len(documents)
+)
+
+
+for doc in documents.values():
+
+    st.sidebar.write(
+        f"📄 {doc['name']}"
     )
 
-    if question:
+    st.sidebar.caption(
+        f"{doc['chunks']} Chunks"
+    )
 
-        if not selected_documents:
 
-            st.warning(
-                "Please select at least one document from the sidebar before asking a question."
+# =====================================
+# Document Selection
+# =====================================
+
+document_names = [
+    doc["name"]
+    for doc in documents.values()
+]
+
+
+selected_documents = st.sidebar.multiselect(
+    "Select documents to use",
+    options=document_names
+)
+
+
+# =====================================
+# Ask Question
+# =====================================
+
+st.divider()
+
+st.subheader(
+    "💬 Ask a Question"
+)
+
+
+question = st.text_input(
+    "Enter your question"
+)
+
+
+if question:
+
+    if not selected_documents:
+
+        st.warning(
+            "Please select at least one document "
+            "from the sidebar before asking a question."
+        )
+
+    else:
+
+        with st.spinner(
+            "🤖 Gemini is thinking..."
+        ):
+
+            answer, sources = ask_question(
+                question,
+                selected_documents=selected_documents
             )
 
-        else:
 
-            with st.spinner(
-                "🤖 Gemini is thinking..."
-            ):
+        # =====================================
+        # Save Chat History
+        # =====================================
 
-                answer, sources = ask_question(
-                    question,
-                    selected_documents=selected_documents
-                )
+        st.session_state.chat_history.append(
+            {
+                "question": question,
+                "answer": answer
+            }
+        )
 
-            st.session_state.chat_history.append(
-                {
-                    "question": question,
-                    "answer": answer
-                }
+
+        # =====================================
+        # Answer
+        # =====================================
+
+        st.success(
+            "✅ Answer Generated"
+        )
+
+        st.write(
+            "## Answer"
+        )
+
+        placeholder = st.empty()
+
+        stream_text = ""
+
+        for word in answer.split():
+
+            stream_text += word + " "
+
+            placeholder.markdown(
+                stream_text
             )
 
-            st.success(
-                "✅ Answer Generated"
+            time.sleep(
+                0.02
             )
 
-            st.write(
-                "## Answer"
-            )
 
-            placeholder = st.empty()
+        # =====================================
+        # Sources
+        # =====================================
 
-            stream_text = ""
+        st.divider()
 
-            for word in answer.split():
+        st.subheader(
+            "📚 Sources Used"
+        )
 
-                stream_text += word + " "
 
-                placeholder.markdown(
-                    stream_text
-                )
-
-                time.sleep(0.02)
-
-            # =====================================
-            # Sources
-            # =====================================
-
-            st.divider()
-
-            st.subheader(
-                "📚 Sources Used"
-            )
+        if sources:
 
             for i, (
                 score,
@@ -225,43 +285,59 @@ if uploaded_files:
                 ):
 
                     st.write(
-                        f"📄 Document: {metadata['document_name']}"
+                        f"📄 Document: "
+                        f"{metadata['document_name']}"
                     )
 
                     st.write(
-                        f"📑 Chunk: {metadata['chunk_number']}"
+                        f"📑 Chunk: "
+                        f"{metadata['chunk_number']}"
                     )
 
                     st.write(
                         document
                     )
 
-            # =====================================
-            # Chat History
-            # =====================================
+        else:
 
-            st.divider()
-
-            st.subheader(
-                "💬 Chat History"
+            st.info(
+                "No relevant sources were found "
+                "in the selected documents."
             )
 
-            for chat in st.session_state.chat_history:
 
-                st.chat_message(
-                    "user"
-                ).write(
-                    chat["question"]
-                )
+        # =====================================
+        # Chat History
+        # =====================================
 
-                st.chat_message(
-                    "assistant"
-                ).write(
-                    chat["answer"]
-                )
+        st.divider()
 
-else:
+        st.subheader(
+            "💬 Chat History"
+        )
+
+
+        for chat in st.session_state.chat_history:
+
+            st.chat_message(
+                "user"
+            ).write(
+                chat["question"]
+            )
+
+            st.chat_message(
+                "assistant"
+            ).write(
+                chat["answer"]
+            )
+
+
+# =====================================
+# No Documents Yet
+# =====================================
+
+elif not documents:
 
     st.info(
-        "👆 Please upload one or more PDFs."
+        "👆 Upload one or more PDFs to get started."
     )
