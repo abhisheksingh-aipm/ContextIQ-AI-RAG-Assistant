@@ -73,7 +73,7 @@ if documents:
         "Select documents to use",
         options=[
             doc["name"]
-            for doc in documents.values()
+            for doc in get_uploaded_documents().values()
         ]
     )
 
