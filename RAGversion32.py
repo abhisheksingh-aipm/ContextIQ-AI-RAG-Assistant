@@ -198,12 +198,12 @@ def store_embeddings(
     print("Embeddings stored successfully!")
 
 
-## ==========================
+# ==========================
 # Function 7
-# Search Documents
+# Search Selected Documents
 # ==========================
 
-def search_documents(question, n_results=5):
+def search_documents(question, selected_documents=None, n_results=5):
 
     question_embedding = embedding_model.encode(
         question,
@@ -211,20 +211,46 @@ def search_documents(question, n_results=5):
     )
 
     results = collection.query(
-
-        query_embeddings=[question_embedding.tolist()],
-
-        n_results=n_results,
-
+        query_embeddings=[
+            question_embedding.tolist()
+        ],
+        n_results=50,
         include=[
             "documents",
             "metadatas",
             "distances"
         ]
-
     )
 
-    print("Search completed successfully!")
+    if selected_documents:
+
+        filtered_documents = []
+        filtered_metadatas = []
+        filtered_distances = []
+
+        for document, metadata, distance in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0]
+        ):
+
+            if metadata["document_name"] in selected_documents:
+
+                filtered_documents.append(document)
+                filtered_metadatas.append(metadata)
+                filtered_distances.append(distance)
+
+        results = {
+            "documents": [
+                filtered_documents[:n_results]
+            ],
+            "metadatas": [
+                filtered_metadatas[:n_results]
+            ],
+            "distances": [
+                filtered_distances[:n_results]
+            ]
+        }
 
     return results
 
