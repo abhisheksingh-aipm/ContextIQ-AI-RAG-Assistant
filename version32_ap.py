@@ -132,6 +132,8 @@ if uploaded_files:
             st.success(
                 "Document indexed successfully."
             )
+            if uploaded_file.name not in st.session_state.selected_documents:
+              st.session_state.selected_documents.append(uploaded_file.name)
 
 
 # =====================================
@@ -177,9 +179,16 @@ document_names = [
 ]
 
 
+if "selected_documents" not in st.session_state:
+    st.session_state.selected_documents = []
+
 selected_documents = st.sidebar.multiselect(
     "Select documents to use",
-    options=document_names
+    options=[
+        doc["name"]
+        for doc in documents.values()
+    ],
+    default=st.session_state.selected_documents
 )
 
 
