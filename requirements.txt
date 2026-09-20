@@ -5,3 +5,4 @@ sentence-transformers
 google-genai
 python-dotenv
 torch
+torchvision
