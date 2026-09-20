@@ -222,39 +222,37 @@ def search_documents(question, selected_documents=None, n_results=5):
         ]
     )
 
-    if selected_documents:
+    filtered_documents = []
+    filtered_metadatas = []
+    filtered_distances = []
 
-        filtered_documents = []
-        filtered_metadatas = []
-        filtered_distances = []
+    for document, metadata, distance in zip(
+        results["documents"][0],
+        results["metadatas"][0],
+        results["distances"][0]
+    ):
 
-        for document, metadata, distance in zip(
-            results["documents"][0],
-            results["metadatas"][0],
-            results["distances"][0]
+        if (
+            selected_documents
+            and metadata["document_name"] in selected_documents
         ):
 
-            if metadata["document_name"] in selected_documents:
+            filtered_documents.append(document)
+            filtered_metadatas.append(metadata)
+            filtered_distances.append(distance)
 
-                filtered_documents.append(document)
-                filtered_metadatas.append(metadata)
-                filtered_distances.append(distance)
-
-        results = {
-            "documents": [
-                filtered_documents[:n_results]
-            ],
-            "metadatas": [
-                filtered_metadatas[:n_results]
-            ],
-            "distances": [
-                filtered_distances[:n_results]
-            ]
-        }
-
-    return results
-
-
+    return {
+        "documents": [
+            filtered_documents[:n_results]
+        ],
+        "metadatas": [
+            filtered_metadatas[:n_results]
+        ],
+        "distances": [
+            filtered_distances[:n_results]
+        ]
+    }
+    
 # ==========================
 # Function 8
 # Rerank Search Results
