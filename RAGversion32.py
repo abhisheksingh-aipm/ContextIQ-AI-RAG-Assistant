@@ -39,7 +39,7 @@ embedding_model = SentenceTransformer(
     "all-MiniLM-L6-v2"
 )
 
-print("RAG Engine Loaded Successfully")
+print("RAG Engine Loaded Successfully - DOCUMENT FILTER VERSION")
 
 
 # ==========================
