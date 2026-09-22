@@ -98,10 +98,11 @@ if uploaded_files:
 
 # IF NEW FILES WERE ADDED: Automatically select ONLY the newly uploaded files
     if newly_added_files:
-    st.session_state.selected_doc_names = list( dict.fromkeys(
-            st.session_state.selected_doc_names + newly_added_files
+        st.session_state.selected_doc_names = list( 
+            dict.fromkeys(
+                st.session_state.selected_doc_names + newly_added_files
+            )
         )
-    )
     st.session_state.previous_upload_names = current_upload_names
     st.rerun()
 
